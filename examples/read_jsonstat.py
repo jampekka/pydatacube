@@ -1,24 +1,18 @@
 import json
 import urllib2
-
-#from pydatacube import from_jsonstat_dimension
 from pydatacube import jsonstat
 
-#JSONSTAT_URL = "http://json-stat.org/samples/oecd-canada.json"
-#DATASET = 'oecd'
+# Load jsonstat example data and pick a dataset
+# in it
 JSONSTAT_URL = "http://json-stat.org/samples/order.json"
 DATASET = 'order'
-
 data = json.load(urllib2.urlopen(JSONSTAT_URL))
 dataset = data[DATASET]
+
+# Convert to a pydatacube cube
 cube = jsonstat.to_cube(dataset)
-
-#from pprint import pprint
-#pprint(cube)
-
-def pprint_table(table):
-	for row in table:
-		print "\t".join(map(str, row))
-
-table = list(cube.toTable())
-pprint_table(table)
+# Do some filtering
+subcube = cube.filter(A=("1", "2"), C="4")
+# And pretty printing
+for row in subcube:
+	print("\t".join(map(str, row)))

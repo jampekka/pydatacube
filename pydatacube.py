@@ -1,4 +1,5 @@
 import itertools
+import copy
 from collections import namedtuple
 
 def cumprod(vals):
@@ -23,13 +24,22 @@ class _Row(object):
 	
 
 class _DataCube(object):
-	def __init__(self, data):
+	def __init__(self, data, filters=None):
 		self._data = data
 		self._dim_sizes = [len(d['categories'])
 			for d in data['dimensions']]
 		self._dim_magnitudes = dimension_magnitudes(self._dim_sizes)
 		self._dim_indices = {d['id']: i
 			for (i, d) in enumerate(data['dimensions'])}
+		self._cat_indices = {}
+		for dim in data['dimensions']:
+			self._cat_indices[dim['id']] = {c['id']: i
+				for (i, c) in enumerate(dim['categories'])}
+
+		if filters is None:
+			self._filters = {}
+		else:
+			self._filters = filters
 
 	def _dimension(self, idx):
 		if not isinstance(idx, (int, long)):
@@ -45,10 +55,34 @@ class _DataCube(object):
 		return sum(i*m for i, m in zip(indices, self._dim_magnitudes))
 	
 	def __iter__(self):
-		dim_ranges = map(xrange, self._dim_sizes)
+		dim_ranges = []
+		for i in range(len(self._dim_sizes)):
+			if i in self._filters:
+				dim_ranges.append(self._filters[i])
+			else:
+				dim_ranges.append(xrange(self._dim_sizes[i]))
+
 		for indices in itertools.product(*dim_ranges):
 			yield _Row(self, indices)
+	
+	def dimensions(self):
+		return [d['id'] for d in self._data['dimensions']]
 
+	def filter(self, **kwargs):
+		filters = copy.deepcopy(self._filters)
+		for dim, categories in kwargs.items():
+			if isinstance(categories, basestring):
+				categories = [categories]
+			categories = [self._cat_indices[dim][c] for c in categories]
+			dim = self._dim_indices[dim]
+			if dim not in self._filters:
+				filters[dim] = []
+			
+			filters[dim].extend(categories)
+		# TODO: Do this without recalculating stuff by implementing
+		#	__new__ etc.
+		return _DataCube(self._data, filters)
+	
 	def toTable(self):
 		for row in self:
 			yield list(row)
