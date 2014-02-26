@@ -16,9 +16,15 @@ def to_cube(pcaxis_data):
 			)
 		dimensions.append(dimension)
 	cube['dimensions'] = dimensions
+	
 	# TODO: Casting?
 	# TODO: Add a public method to get raw
 	#	data from a Px-object
-	cube['values'] = px._data.split()
+	values = px._data.split()
+	
+	data['value_dimensions'] = [
+		dict(id='value', values=values)
+		]
+
 	return _DataCube(cube)
 

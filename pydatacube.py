@@ -20,7 +20,9 @@ class _Row(object):
 		for field_i, label_i in enumerate(self._indices):
 			yield self._cube._category_label(field_i, label_i)
 		
-		yield self._cube._data['values'][self._cube._flatindex(self._indices)]
+		flat_i = self._cube._flatindex(self._indices)
+		for value_dimension in self._cube._data['value_dimensions']:
+			yield value_dimension['values'][flat_i]
 	
 
 class _DataCube(object):
@@ -70,15 +72,15 @@ class _DataCube(object):
 
 	def filter(self, **kwargs):
 		filters = copy.deepcopy(self._filters)
-		for dim, categories in kwargs.items():
+		for dim_id, categories in kwargs.items():
 			if isinstance(categories, basestring):
 				categories = [categories]
-			categories = [self._cat_indices[dim][c] for c in categories]
-			dim = self._dim_indices[dim]
-			if dim not in self._filters:
-				filters[dim] = []
+			categories = [self._cat_indices[dim_id][c] for c in categories]
+			dim_i = self._dim_indices[dim_id]
+			if dim_i not in self._filters:
+				filters[dim_i] = []
 			
-			filters[dim].extend(categories)
+			filters[dim_i].extend(categories)
 		# TODO: Do this without recalculating stuff by implementing
 		#	__new__ etc.
 		return _DataCube(self._data, filters)
@@ -86,14 +88,4 @@ class _DataCube(object):
 	def toTable(self):
 		for row in self:
 			yield list(row)
-
-		# A bit faster with less nice API
-		"""
-		dim_ranges = map(xrange, self._dim_sizes)
-		for i, indices in enumerate(itertools.product(*dim_ranges)):
-			value_idx = self._flatindex(indices)
-			labels = [self.category_label(field_i, label_i)
-				for field_i, label_i in enumerate(indices)]
-			yield labels + [self._data['values'][value_idx]]
-		"""
 

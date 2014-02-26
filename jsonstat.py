@@ -38,7 +38,9 @@ def _load_dimension(dimensions, dim_i):
 
 def to_cube(js_dataset):
 	data = {}
-	data['values'] = js_dataset['value']
+	data['value_dimensions'] = [
+		dict(id='value', values=js_dataset['value'])
+		]
 	js_dimensions = js_dataset['dimension']
 	data['dimensions'] = []
 	for dim_i, dim_id in enumerate(js_dimensions['id']):
