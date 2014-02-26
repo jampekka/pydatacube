@@ -1,7 +1,8 @@
 # Python API for 'cube'-style data tables
 
-WIP. Currently supports reading (subset of) json-stat objects
-and simple filtering for them. A simple example:
+WIP. Currently supports reading (subset of) JSONstat and
+PC-Axis datasets and doing simple filtering for the data.
+A simple example that shows most current functionality:
 
     import json
     import urllib2

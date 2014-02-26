@@ -35,6 +35,26 @@ def get_logger(level=logging.DEBUG, handler=logging.StreamHandler):
         log.addHandler(ch)
     return log
 
+class PxSyntaxError(Exception): pass
+
+def _iterate_px_entries(data):
+    # Definitely not the fastest way in Python!
+    start = 0
+    in_quote = False
+    for i, c in enumerate(data):
+        if c == '"':
+            in_quote = not in_quote
+            continue
+        if c == ';' and not in_quote:
+            yield data[start:i].strip()
+            start = i + 1
+    
+    if in_quote:
+        raise PxSyntaxError("Unclosed quote")
+    if data[start:].strip():
+        raise PxSyntaxError("Data in the end without ending ';'")
+    
+
 class Px(object):
     """
     PC Axis document structure as a object interface
@@ -77,22 +97,23 @@ class Px(object):
         meta = unicode(meta, 'iso-8859-1')
         data = unicode(data, 'iso-8859-1')
         nmeta = {}
-        for line in meta.strip().split(';\n'):
-            if line:
-                m = self._subfield_re.match(line)
-                if m:
-                    field, subkey, value = self._get_subfield(m, line)
-                    if hasattr(self, field):
-                        getattr(self, field)[subkey] = value
-                    else:
-                        setattr(self, field, OD(
-                            [(subkey, value)]
-                            ))
-                else: 
-                    field, value = line.split('=', 1)
-                    if not field.startswith('NOTE'):
-                        setattr(self, field.strip().lower(), self._clean_value(value))
-                        #TODO: NOTE keywords can be standalone or have subfields...
+        for line in _iterate_px_entries(meta.strip()):
+            if not line:
+                continue
+            m = self._subfield_re.match(line)
+            if m:
+                field, subkey, value = self._get_subfield(m, line)
+                if hasattr(self, field):
+                    getattr(self, field)[subkey] = value
+                else:
+                    setattr(self, field, OD(
+                        [(subkey, value)]
+                        ))
+            else:
+                field, value = line.split('=', 1)
+                if not field.startswith('NOTE'):
+                    setattr(self, field.strip().lower(), self._clean_value(value))
+                    #TODO: NOTE keywords can be standalone or have subfields...
         return data.strip()[:-1]
    
     def __init__(self, px_doc):

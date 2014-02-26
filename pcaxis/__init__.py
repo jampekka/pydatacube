@@ -22,7 +22,7 @@ def to_cube(pcaxis_data):
 	#	data from a Px-object
 	values = px._data.split()
 	
-	data['value_dimensions'] = [
+	cube['value_dimensions'] = [
 		dict(id='value', values=values)
 		]
 
