@@ -57,18 +57,24 @@ class _DataCube(object):
 		return sum(i*m for i, m in zip(indices, self._dim_magnitudes))
 	
 	def __iter__(self):
+		dim_ranges = self._enabled_dim_ranges()
+
+		for indices in itertools.product(*dim_ranges):
+			yield _Row(self, indices)
+	
+	def dimension_ids(self):
+		ids = [d['id'] for d in self._data['dimensions']]
+		ids += [d['id'] for d in self._data['value_dimensions']]
+		return ids
+	
+	def _enabled_dim_ranges(self):
 		dim_ranges = []
 		for i in range(len(self._dim_sizes)):
 			if i in self._filters:
 				dim_ranges.append(self._filters[i])
 			else:
-				dim_ranges.append(xrange(self._dim_sizes[i]))
-
-		for indices in itertools.product(*dim_ranges):
-			yield _Row(self, indices)
-	
-	def dimensions(self):
-		return [d['id'] for d in self._data['dimensions']]
+				dim_ranges.append(range(self._dim_sizes[i]))
+		return dim_ranges
 
 	def filter(self, **kwargs):
 		filters = copy.deepcopy(self._filters)
@@ -88,4 +94,16 @@ class _DataCube(object):
 	def toTable(self):
 		for row in self:
 			yield list(row)
+	
+	def toEntries(self):
+		ids = self.dimension_ids()
+		for row in self:
+			yield (itertools.izip(ids, row))
+	
+	def __len__(self):
+		mylen = 0
+		for i, rng in enumerate(self._enabled_dim_ranges()):
+			mylen += len(rng)*self._dim_sizes[i]
+		return mylen
+		
 
