@@ -4,9 +4,11 @@ import string
 from ..pydatacube import _DataCube
 import px_reader
 
-default_translate = string.maketrans(
-	' -',
-	'__')
+# A bit scandinavian specific
+default_translate = dict(zip(
+	u"äöä -",
+	u"aoa__"
+	))
 
 class Sluger(object):
 	def __init__(self, translate=default_translate):
@@ -14,16 +16,16 @@ class Sluger(object):
 		self.translate = translate
 	
 	def __call__(self, value):
-		slug = value.encode('ascii', errors='ignore')
-		slug = slug.lower()
-		slug = slug.translate(self.translate)
+		slug = value.lower()
 		chars = []
 		for c in slug:
+			c = self.translate.get(c, c)
 			if c == '_':
 				chars.append(c)
 			if c.isalnum():
 				chars.append(c)
 		slug = ''.join(chars)
+		slug = slug.encode('ascii', errors='ignore')
 		realslug = slug
 		# Hopefully won't happen
 		while realslug in self.given_out:
