@@ -1,6 +1,6 @@
 import itertools
 import copy
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 
 def cumprod(vals):
 	cum = [vals[0]]
@@ -23,7 +23,6 @@ class _Row(object):
 		flat_i = self._cube._flatindex(self._indices)
 		for value_dimension in self._cube._data['value_dimensions']:
 			yield value_dimension['values'][flat_i]
-	
 
 class _DataCube(object):
 	def __init__(self, data, filters=None):
@@ -42,7 +41,18 @@ class _DataCube(object):
 			self._filters = {}
 		else:
 			self._filters = filters
-
+	
+	def specification(self):
+		spec = copy.copy(self._data)
+		del spec['value_dimensions']
+		for dim in self._data['value_dimensions']:
+			novals = OrderedDict(
+				(k, v) for (k, v) in dim.iteritems()
+					if k != 'values'
+				)
+			spec['dimensions'].append(novals)
+		return spec
+	
 	def _dimension(self, idx):
 		if not isinstance(idx, (int, long)):
 			idx = self._dim_indices[idx]

@@ -1,10 +1,11 @@
+from collections import OrderedDict
 from ..pydatacube import _DataCube
 import px_reader
 
 def to_cube(pcaxis_data):
 	# TODO: Sluging of names for ids
 	px = px_reader.Px(pcaxis_data)
-	cube = {}
+	cube = OrderedDict()
 	dimensions = []
 	# Values is an ordered dict, so this
 	# should go fine.

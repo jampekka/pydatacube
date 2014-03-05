@@ -1,7 +1,8 @@
+from collections import OrderedDict
 import pydatacube
 
 def _load_dimension(dimensions, dim_i):
-	dimension = {}
+	dimension = OrderedDict()
 	dimension['id'] = dimensions['id'][dim_i]
 	jsonstat_dim = dimensions[dimension['id']]
 	if 'label' in jsonstat_dim:
@@ -26,7 +27,7 @@ def _load_dimension(dimensions, dim_i):
 		labels = {}
 
 	for cat_id in category_ids:
-		category = {}
+		category = OrderedDict()
 		category['id'] = cat_id
 		if cat_id in labels:
 			category['label'] = labels[cat_id]
@@ -37,11 +38,12 @@ def _load_dimension(dimensions, dim_i):
 	return dimension
 
 def to_cube(js_dataset):
-	data = {}
+	data = OrderedDict()
+	js_dimensions = js_dataset['dimension']
 	data['value_dimensions'] = [
 		dict(id='value', values=js_dataset['value'])
 		]
-	js_dimensions = js_dataset['dimension']
+
 	data['dimensions'] = []
 	for dim_i, dim_id in enumerate(js_dimensions['id']):
 		dimension = _load_dimension(js_dimensions, dim_i)
