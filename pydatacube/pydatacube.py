@@ -101,9 +101,9 @@ class _DataCube(object):
 			yield (itertools.izip(ids, row))
 	
 	def __len__(self):
-		mylen = 0
-		for i, rng in enumerate(self._enabled_dim_ranges()):
-			mylen += len(rng)*self._dim_sizes[i]
+		realsizes = [len(r) for r in self._enabled_dim_ranges()]
+		mylen = 1
+		for s in realsizes:
+			mylen *= s
 		return mylen
-		
 
