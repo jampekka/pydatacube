@@ -44,6 +44,7 @@ class _DataCube(object):
 	
 	def specification(self):
 		spec = copy.copy(self._data)
+		spec['dimensions'] = copy.copy(spec['dimensions'])
 		del spec['value_dimensions']
 		for dim in self._data['value_dimensions']:
 			novals = OrderedDict(
