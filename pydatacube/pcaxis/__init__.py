@@ -36,6 +36,10 @@ def to_cube(pcaxis_data, Sluger=Sluger):
 	# TODO: Sluging of names for ids
 	px = px_reader.Px(pcaxis_data)
 	cube = OrderedDict()
+	metadata = OrderedDict()
+	metadata['label'] = px.title
+	cube['metadata'] = metadata
+	
 	dimensions = []
 	# Values is an ordered dict, so this
 	# should go fine.
@@ -60,6 +64,6 @@ def to_cube(pcaxis_data, Sluger=Sluger):
 	cube['value_dimensions'] = [
 		dict(id=dim_sluger('value'), values=values)
 		]
-
+	
 	return _DataCube(cube)
 
