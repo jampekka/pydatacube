@@ -36,15 +36,30 @@ class _DataCube(object):
 		for dim in data['dimensions']:
 			self._cat_indices[dim['id']] = {c['id']: i
 				for (i, c) in enumerate(dim['categories'])}
-
+		
 		if filters is None:
 			self._filters = {}
 		else:
 			self._filters = filters
 	
+	@property
+	def metadata(self):
+		return self._data['metadata']
+
 	def specification(self):
 		spec = copy.copy(self._data)
-		spec['dimensions'] = copy.copy(spec['dimensions'])
+		spec['length'] = len(self)
+		enabled = self._enabled_dim_ranges()
+		spec['dimensions'] = []
+		for dim_i, origdim in enumerate(self._data['dimensions']):
+			dim = copy.copy(origdim)
+			origcats = dim['categories']
+			dim['categories'] = []
+			for cat_i in enabled[dim_i]:
+				dim['categories'].append(
+					origcats[cat_i])
+			spec['dimensions'].append(dim)
+
 		del spec['value_dimensions']
 		for dim in self._data['value_dimensions']:
 			novals = OrderedDict(
