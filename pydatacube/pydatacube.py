@@ -42,6 +42,11 @@ class _DataCube(object):
 		else:
 			self._filters = filters
 	
+	def materialize(self):
+		if len(self._filters):
+			raise NotImplemented("Materializing not yet implemented")
+		return self
+	
 	@property
 	def metadata(self):
 		return self._data['metadata']

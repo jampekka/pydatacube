@@ -14,5 +14,6 @@ cube = jsonstat.to_cube(dataset)
 # Do some filtering
 subcube = cube.filter(A=("1", "2"), C="4")
 # And pretty printing
+print cube.metadata['label']
 for row in subcube:
 	print("\t".join(map(str, row)))
