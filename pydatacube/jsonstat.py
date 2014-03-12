@@ -40,13 +40,20 @@ def _load_dimension(dimensions, dim_i):
 def to_cube(js_dataset):
 	data = OrderedDict()
 	js_dimensions = js_dataset['dimension']
-	data['value_dimensions'] = [
-		dict(id='value', values=js_dataset['value'])
-		]
 
+	metadata = OrderedDict()
+	if 'label' in js_dataset:
+		metadata['label'] = js_dataset['label']
+	data['metadata'] = metadata
+	
 	data['dimensions'] = []
 	for dim_i, dim_id in enumerate(js_dimensions['id']):
 		dimension = _load_dimension(js_dimensions, dim_i)
 		data['dimensions'].append(dimension)
+	
+	data['value_dimensions'] = [
+		dict(id='value', values=js_dataset['value'])
+		]
+
 	return pydatacube._DataCube(data)
 
