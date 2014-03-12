@@ -96,7 +96,7 @@ def to_jsonstat_dataset(cube):
 		for ccat in ccats:
 			if 'label' not in ccat:
 				continue
-			catlabels[ccat] = ccat['label']
+			catlabels[ccat['id']] = ccat['label']
 		if len(catlabels) > 0:
 			cats['label'] = catlabels
 		
