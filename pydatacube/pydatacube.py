@@ -140,7 +140,7 @@ class _DataCube(object):
 			if dim_i not in self._filters:
 				filters[dim_i] = set()
 			
-			filters[dim_i].update(categories)
+			filters[dim_i] = set(categories)
 		# TODO: Do this without recalculating stuff by implementing
 		#	__new__ etc.
 		return _DataCube(self._data, filters)
