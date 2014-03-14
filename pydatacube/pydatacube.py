@@ -153,11 +153,11 @@ class _DataCube(object):
 		for row in self:
 			yield list(rowiter(row))
 	
-	def toEntries(self, category_labels=False, value_labels=False):
-		if category_labels:
-			cats = self.dimension_labels()
+	def toEntries(self, dimension_labels=False, value_labels=False):
+		if dimension_labels:
+			dims = self.dimension_labels()
 		else:
-			cats = self.dimension_ids()
+			dims = self.dimension_ids()
 
 		if value_labels:
 			rowiter = lambda row: row.labels()
@@ -165,7 +165,34 @@ class _DataCube(object):
 			rowiter = lambda row: row.ids()
 		
 		for row in self:
-			yield (itertools.izip(cats, rowiter(row)))
+			yield (itertools.izip(dims, rowiter(row)))
+	
+	def toColumns(self,
+			start=0, end=None,
+			dimension_labels=False, value_labels=False,
+			collapse_unique=True):
+		if dimension_labels:
+			dims = self.dimension_labels()
+		else:
+			dims = self.dimension_ids()
+
+		if value_labels:
+			rowiter = lambda row: row.labels()
+		else:
+			rowiter = lambda row: row.ids()
+
+		dataset = itertools.islice(iter(self), start, end)
+
+		rows = (rowiter(row) for row in dataset)
+		cols = list(itertools.izip(*rows))
+		# TODO: Don't fetch them in the first place!
+		for i, rng in enumerate(self._enabled_dim_ranges()):
+			if len(rng) == 1:
+				cols[i] = cols[i][0]
+
+		return OrderedDict(zip(dims, list(cols)))
+		
+		
 	
 	def __len__(self):
 		realsizes = [len(r) for r in self._enabled_dim_ranges()]
