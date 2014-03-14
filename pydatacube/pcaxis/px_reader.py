@@ -19,7 +19,6 @@ from collections import OrderedDict as OD
 from collections import defaultdict
 from itertools import izip_longest, cycle, repeat
 from operator import mul
-import pandas as pd
 
 def get_logger(level=logging.DEBUG, handler=logging.StreamHandler):
     """
@@ -253,6 +252,8 @@ def build_dataframe(px):
     """
     Build a Pandas DataFrame from Px rows and columns
     """
+    # Lazy import for soft dependency
+    import pandas as pd
     cols, rows = index(px)
     col_index = pd.MultiIndex.from_arrays(cols)
     row_index = pd.MultiIndex.from_arrays(rows)
