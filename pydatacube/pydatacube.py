@@ -16,13 +16,24 @@ class _Row(object):
 		self._cube = cube
 		self._indices = indices
 	
-	def __iter__(self):
+	def ids(self):
+		for field_i, label_i in enumerate(self._indices):
+			yield self._cube._category_id(field_i, label_i)
+		
+		flat_i = self._cube._flatindex(self._indices)
+		for value_dimension in self._cube._data['value_dimensions']:
+			yield value_dimension['values'][flat_i]
+	
+	def labels(self):
 		for field_i, label_i in enumerate(self._indices):
 			yield self._cube._category_label(field_i, label_i)
 		
 		flat_i = self._cube._flatindex(self._indices)
 		for value_dimension in self._cube._data['value_dimensions']:
 			yield value_dimension['values'][flat_i]
+
+	def __iter__(self):
+		return self.ids()
 
 class _DataCube(object):
 	def __init__(self, data, filters=None):
@@ -83,6 +94,10 @@ class _DataCube(object):
 		dimension = self._dimension(dimension)
 		category = dimension['categories'][category_idx]
 		return category.get('label', category['id'])
+	
+	def _category_id(self, dimension, category_idx):
+		dimension = self._dimension(dimension)
+		return dimension['categories'][category_idx]['id']
 			
 	def _flatindex(self, indices):
 		return sum(i*m for i, m in zip(indices, self._dim_magnitudes))
@@ -97,6 +112,14 @@ class _DataCube(object):
 		ids = [d['id'] for d in self._data['dimensions']]
 		ids += [d['id'] for d in self._data['value_dimensions']]
 		return ids
+	
+	def dimension_labels(self):
+		label = lambda d: d.get('label', d['id'])
+		
+		ids = [label(d) for d in self._data['dimensions']]
+		ids += [label(d) for d in self._data['value_dimensions']]
+		return ids
+		
 	
 	def _enabled_dim_ranges(self):
 		dim_ranges = []
@@ -122,14 +145,27 @@ class _DataCube(object):
 		#	__new__ etc.
 		return _DataCube(self._data, filters)
 	
-	def toTable(self):
+	def toTable(self, labels=False):
+		if labels:
+			rowiter = lambda row: row.labels()
+		else:
+			rowiter = lambda row: row.ids()
 		for row in self:
-			yield list(row)
+			yield list(rowiter(row))
 	
-	def toEntries(self):
-		ids = self.dimension_ids()
+	def toEntries(self, category_labels=False, value_labels=False):
+		if category_labels:
+			cats = self.dimension_labels()
+		else:
+			cats = self.dimension_ids()
+
+		if value_labels:
+			rowiter = lambda row: row.labels()
+		else:
+			rowiter = lambda row: row.ids()
+		
 		for row in self:
-			yield (itertools.izip(ids, row))
+			yield (itertools.izip(cats, rowiter(row)))
 	
 	def __len__(self):
 		realsizes = [len(r) for r in self._enabled_dim_ranges()]
