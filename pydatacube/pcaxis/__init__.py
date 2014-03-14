@@ -32,6 +32,8 @@ class Sluger(object):
 			realslug = realslug + '_'
 		return realslug
 
+PxSyntaxError = px_reader.PxSyntaxError
+
 def to_cube(pcaxis_data, Sluger=Sluger):
 	# TODO: Sluging of names for ids
 	px = px_reader.Px(pcaxis_data)

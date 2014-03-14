@@ -92,7 +92,7 @@ class Px(object):
         Returns the data part
         """
         if isinstance(px_doc, basestring):
-	        px_doc = open(px_doc, 'U')
+            px_doc = open(px_doc, 'U')
         meta, data = px_doc.read().split("DATA=")
         meta = unicode(meta, 'iso-8859-1')
         data = unicode(data, 'iso-8859-1')
@@ -112,7 +112,16 @@ class Px(object):
             else:
                 field, value = line.split('=', 1)
                 if not field.startswith('NOTE'):
-                    setattr(self, field.strip().lower(), self._clean_value(value))
+                    try:
+                        setattr(self, field.strip().lower(), self._clean_value(value))
+                    except UnicodeEncodeError:
+                        # Weirdly encoded PX files cause sometimes the
+                        # "statements" to be split wrongly, causing non-ascii
+                        # characters to appear in the 'field'. To save
+                        # the dataset, just ignore such cases here.
+                        # See https://github.com/statfi/opendata/issues/3
+                        raise PxSyntaxError("Non-ascii field in PX file. Probably due to weird usage of semicolons.")
+                    
                     #TODO: NOTE keywords can be standalone or have subfields...
         return data.strip()[:-1]
    
