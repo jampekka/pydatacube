@@ -138,9 +138,9 @@ class _DataCube(object):
 			categories = [self._cat_indices[dim_id][c] for c in categories]
 			dim_i = self._dim_indices[dim_id]
 			if dim_i not in self._filters:
-				filters[dim_i] = []
+				filters[dim_i] = set()
 			
-			filters[dim_i].extend(categories)
+			filters[dim_i].update(categories)
 		# TODO: Do this without recalculating stuff by implementing
 		#	__new__ etc.
 		return _DataCube(self._data, filters)
