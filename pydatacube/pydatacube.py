@@ -38,6 +38,7 @@ class _Row(object):
 class _DataCube(object):
 	def __init__(self, data, filters=None):
 		self._data = data
+
 		self._dim_sizes = [len(d['categories'])
 			for d in data['dimensions']]
 		self._dim_magnitudes = dimension_magnitudes(self._dim_sizes)
@@ -61,7 +62,8 @@ class _DataCube(object):
 	@property
 	def metadata(self):
 		return self._data['metadata']
-
+	
+	@property
 	def specification(self):
 		spec = copy.copy(self._data)
 		spec['length'] = len(self)
