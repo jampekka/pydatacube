@@ -153,13 +153,13 @@ class _DataCube(object):
 		for row in self:
 			yield list(rowiter(row))
 	
-	def toEntries(self, dimension_labels=False, value_labels=False):
+	def toEntries(self, dimension_labels=False, category_labels=False):
 		if dimension_labels:
 			dims = self.dimension_labels()
 		else:
 			dims = self.dimension_ids()
 
-		if value_labels:
+		if category_labels:
 			rowiter = lambda row: row.labels()
 		else:
 			rowiter = lambda row: row.ids()
@@ -169,14 +169,14 @@ class _DataCube(object):
 	
 	def toColumns(self,
 			start=0, end=None,
-			dimension_labels=False, value_labels=False,
+			dimension_labels=False, category_labels=False,
 			collapse_unique=True):
 		if dimension_labels:
 			dims = self.dimension_labels()
 		else:
 			dims = self.dimension_ids()
 
-		if value_labels:
+		if category_labels:
 			rowiter = lambda row: row.labels()
 		else:
 			rowiter = lambda row: row.ids()
@@ -185,10 +185,11 @@ class _DataCube(object):
 
 		rows = (rowiter(row) for row in dataset)
 		cols = list(itertools.izip(*rows))
-		# TODO: Don't fetch them in the first place!
-		for i, rng in enumerate(self._enabled_dim_ranges()):
-			if len(rng) == 1:
-				cols[i] = cols[i][0]
+		if collapse_unique:
+			# TODO: Don't fetch them in the first place!
+			for i, rng in enumerate(self._enabled_dim_ranges()):
+				if len(rng) == 1:
+					cols[i] = cols[i][0]
 
 		return OrderedDict(zip(dims, list(cols)))
 		
