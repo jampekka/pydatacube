@@ -193,7 +193,26 @@ class _DataCube(object):
 
 		return OrderedDict(zip(dims, list(cols)))
 		
+	def groups(self, *as_values):
+		value_ids = [d['id'] for d in self._data['value_dimensions']]
+		as_values = filter(lambda id: id not in value_ids, as_values)
+		value_idx = [self._dim_indices[id] for id in as_values]
+		dim_idx, groupings = zip(*[(i, r) for
+			(i, r) in enumerate(self._enabled_dim_ranges())
+			if i not in value_idx])
 		
+		dimension_ids = [dim['id'] for dim in self._data['dimensions']]
+		for subset in itertools.product(*groupings):
+			filt = {}
+			for i, cat_i in enumerate(subset):
+				dim_i = dim_idx[i]
+				dim_id = dimension_ids[dim_i]
+				cat_id = self._category_id(dim_i, cat_i)
+				filt[dim_id] = cat_id
+			yield self.filter(**filt)
+
+
+
 	
 	def __len__(self):
 		realsizes = [len(r) for r in self._enabled_dim_ranges()]
