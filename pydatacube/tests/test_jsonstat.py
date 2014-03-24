@@ -31,5 +31,5 @@ def test_filtered_to_jsonstat(sample_cube):
 	filt = {dimension['id']: category['id']}
 	filtered = sample_cube.filter(**filt)
 	js = jsonstat.to_jsonstat(filtered)
-	assert_data_equals(jsonstat.to_cube(js['dataset']), filtered)
-	
+	assert jsonstat.to_cube(js['dataset']) == filtered
+
