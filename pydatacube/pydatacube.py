@@ -54,6 +54,43 @@ class _DataCube(object):
 		else:
 			self._filters = filters
 	
+
+	def __eq__(self, other):
+		"""
+		Tests if cubes are equal
+
+		Cubes are equal when they represent exactly same data,
+		including metadata and labels.
+
+		NOTE: This can quite an expensive call, especially if
+		the objects are identical!
+		"""
+		if self is other:
+			return True
+		
+		if not isinstance(other, _DataCube):
+			return False
+		
+		# Try first different tests to tell the
+		# objects apart in about order of test
+		# complexity.
+		if len(self) != len(other):
+			return False
+		if self.metadata != other.metadata:
+			return False
+		if self.specification != other.specification:
+			return False
+		
+		if self._data is other._data and self._filters == other._filters:
+			return True
+
+		# Finally go through all the values to
+		# see if they are identical.
+		for myval, otherval in itertools.izip(self, other):
+			if list(myval) != list(otherval):
+				return False
+		return True
+	
 	def _materialize(self):
 		"""
 		Make a "standalone" version of a filtered datacube

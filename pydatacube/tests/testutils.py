@@ -14,10 +14,10 @@ def assert_data_equals(cube1, cube2):
 	for row1, row2 in itertools.izip(cube1, cube2):
 		assert list(row1) == list(row2)
 
-def sample_filtering(cube):
+def sample_filtering(cube, dim_i=1, cat_i=1):
 	spec = cube.specification
-	dimension = spec['dimensions'][1]
-	category = dimension['categories'][1]
+	dimension = spec['dimensions'][dim_i]
+	category = dimension['categories'][cat_i]
 	filt = {dimension['id']: category['id']}
 	filtered = cube.filter(**filt)
 	return filtered
