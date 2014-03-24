@@ -55,9 +55,34 @@ class _DataCube(object):
 			self._filters = filters
 	
 	def _materialize(self):
-		if len(self._filters):
-			raise NotImplementedError("Materializing not yet implemented")
-		return self
+		"""
+		Make a "standalone" version of a filtered datacube
+		
+		Should be needed only internally by stuff that accesses
+		_data.
+
+		NOTE: Doesn't fully copy the data, ie changes to the
+		materialized still reflect to the original. Keep in mind
+		that we should be considered immutable.
+		"""
+		if len(self._filters) == 0:
+			return self
+		
+		data = copy.copy(self._data)
+		enabled_dim_idx = self._enabled_dim_ranges()
+		data['dimensions'] = copy.copy(data['dimensions'])
+		for dim_i, cat_idx in enumerate(enabled_dim_idx):
+			dim = data['dimensions'][dim_i] = copy.copy(data['dimensions'][dim_i])
+			dim['categories'] = [dim['categories'][i] for i in cat_idx]
+		
+		valdims = data['value_dimensions'] = copy.copy(data['value_dimensions'])
+		validx = map(self._flatindex, itertools.product(*self._enabled_dim_ranges()))
+		for i in range(len(valdims)):
+			valdim = valdims[i] = copy.copy(valdims[i])
+			values = valdim['values']
+			valdim['values'] = [values[i] for i in validx]
+
+		return _DataCube(data)
 	
 	@property
 	def metadata(self):
@@ -106,7 +131,6 @@ class _DataCube(object):
 	
 	def __iter__(self):
 		dim_ranges = self._enabled_dim_ranges()
-
 		for indices in itertools.product(*dim_ranges):
 			yield _Row(self, indices)
 	
