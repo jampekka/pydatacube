@@ -35,21 +35,31 @@ class Sluger(object):
 PxSyntaxError = px_reader.PxSyntaxError
 
 def to_cube(pcaxis_data, Sluger=Sluger):
-	# TODO: Sluging of names for ids
 	px = px_reader.Px(pcaxis_data)
 	cube = OrderedDict()
 	metadata = OrderedDict()
 	metadata['label'] = px.title
 	cube['metadata'] = metadata
 	
+	if hasattr(px, 'codes'):
+		codes = px.codes
+	else:
+		codes = {}
+
 	dimensions = []
-	# Values is an ordered dict, so this
-	# should go fine.
 	dim_sluger = Sluger()
 	for label, px_categories in px.values.iteritems():
-		cat_sluger = Sluger()
-		categories = [{'id': cat_sluger(c), 'label': c}
-			for c in px_categories]
+		if label in px.codes:
+			cat_ids = codes[label]
+		else:
+			cat_sluger = Sluger()
+			cat_ids = [cat_sluger(c) for c in px_categories]
+		
+		categories = []
+		for cat_id, cat_label in zip(cat_ids, px_categories):
+			cat = dict(id=cat_id, label=cat_label)
+			categories.append(cat)
+
 		dimension = dict(
 			id=dim_sluger(label),
 			label=label,
