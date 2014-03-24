@@ -54,7 +54,7 @@ class _DataCube(object):
 		else:
 			self._filters = filters
 	
-	def materialize(self):
+	def _materialize(self):
 		if len(self._filters):
 			raise NotImplementedError("Materializing not yet implemented")
 		return self
