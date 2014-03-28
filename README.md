@@ -161,22 +161,23 @@ UNR,AU,2007,4.379649386
 
 The columns (=dimensions) and "certain" values (=categories) usually have human-readable labels. The category and "non-category" values have a deeper meaning in the cube data structure, but usually this can be ignored. The main difference is that categories are always strings and have ids and usually labels, whether the "non-category" values are usually numbers. For these "non-category" values requesting either id or label results just to the number. And even for categories, the id is used as label if no label is specified.
 
-So we can quite easily do a quick and dirty CSV-exporter that uses the labels:
+So we can quite easily do a quick and dirty CSV-exporter that uses the labels. We'll have to use semicolons separator as the area-column name uses commas.
 
 ```python
-dimension_labels = [dimension['id'] for dimension in specification['dimensions']]
-print(",".join(dimension_labels))
+dimension_labels = [dimension.get('label', dimension['id'])
+	for dimension in specification['dimensions']]
+print(";".join(dimension_labels))
 for row in islice(cube, 5):
 	row_labels_as_strings = map(str, row.labels())
-	print(",".join(row_labels_as_strings))
+	print(";".join(row_labels_as_strings))
 ```
 ```
-concept,area,year,value
-Unemployment rate,Australia,2003,5.943826289
-Unemployment rate,Australia,2004,5.39663128
-Unemployment rate,Australia,2005,5.044790587
-Unemployment rate,Australia,2006,4.789362794
-Unemployment rate,Australia,2007,4.379649386
+Selected indicator;OECD countries, EU15 and total;2003-2014;value
+Unemployment rate;Australia;2003;5.943826289
+Unemployment rate;Australia;2004;5.39663128
+Unemployment rate;Australia;2005;5.044790587
+Unemployment rate;Australia;2006;4.789362794
+Unemployment rate;Australia;2007;4.379649386
 ```
 
 

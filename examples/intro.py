@@ -87,12 +87,14 @@ for row in islice(cube, 5):
 # specified.
 # 
 # So we can quite easily do a quick and dirty CSV-exporter that uses the
-# labels:
-dimension_labels = [dimension['id'] for dimension in specification['dimensions']]
-print(",".join(dimension_labels))
+# labels. We'll have to use semicolons separator as the area-column name uses
+# commas.
+dimension_labels = [dimension.get('label', dimension['id'])
+	for dimension in specification['dimensions']]
+print(";".join(dimension_labels))
 for row in islice(cube, 5):
 	row_labels_as_strings = map(str, row.labels())
-	print(",".join(row_labels_as_strings))
+	print(";".join(row_labels_as_strings))
 
 # There are a few other "formats" in which we can get the data out.
 # `_DataCube.toEntries` spits the rows out as dicts and `_DataCube.toColumns`
