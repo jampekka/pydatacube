@@ -234,6 +234,7 @@ class _DataCube(object):
 			start=0, end=None,
 			dimension_labels=False, category_labels=False,
 			collapse_unique=True):
+		# TODO: Return iterators instead of the start-end hassle?
 		if dimension_labels:
 			dims = self.dimension_labels()
 		else:

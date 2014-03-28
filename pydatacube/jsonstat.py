@@ -1,3 +1,5 @@
+"""JSON-stat to pydatacube conversion"""
+
 from collections import OrderedDict
 import pydatacube
 

@@ -1,7 +1,7 @@
 # encoding: utf-8
 from collections import OrderedDict
 import string
-from ..pydatacube import _DataCube
+from pydatacube.pydatacube import _DataCube
 import px_reader
 
 # A bit scandinavian specific
