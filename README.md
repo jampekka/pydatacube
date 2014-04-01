@@ -234,7 +234,7 @@ pprint(dict(finnish_unemployment_2014.toColumns()))
 
 ## Grouping
 
-Another main feature for working with the data is "grouping", done by `_DataCube.groups`. This need often arises when we want to compare some statistics among different groups by eg. plotting. For example, let's compare how unemployment has progressed in Finland and Sweden over the years. We'll start by first filtering for only stuff we want.
+Another main feature for working with the data is "grouping", done by `_DataCube.group_for` and `_DataCube.group_by`. This need often arises when we want to compare some statistics among different groups by eg. plotting. For example, let's compare how unemployment has progressed in Finland and Sweden over the years.  We'll start by first filtering for only stuff we want.
 
 ```python
 fi_and_swe_unemployment = cube.filter(
@@ -243,14 +243,14 @@ fi_and_swe_unemployment = cube.filter(
 ```
 
 
-From the filtered cube we can get one cube for each country by grouping. The `_DataCube.groups` method, a bit unintuitively perhaps, takes as arguments the columns that we *don't want* to affect the grouping. So to get the value and year data for each group, we'll specify them as "non-grouping variables".
+From the filtered cube we can get one cube for each country by grouping.  The `_DataCube.group_for` method takes as arguments the columns that we *don't want* to affect the grouping (there's also `_DataCube.group_by` which does the reverse). So to get the value and year data for each group, we'll specify them as "non-grouping variables".
 
 ```python
-country_unr_cubes = fi_and_swe_unemployment.groups('year', 'value')
+country_unr_cubes = fi_and_swe_unemployment.group_for('year', 'value')
 ```
 
 
-The `country_unr_cubes` is now actually an iterator of filtered cubes for Finland and Sweden. We'll play with these a bit, so let's convert the iterator to a list so we don't lose the stuff.
+The `country_unr_cubes` is now actually an iterator of filtered cubes for Finland and Sweden. We'll play with these a bit, so lets convert the iterator to a list so we don't lose the stuff.
 
 ```python
 country_unr_cubes = list(country_unr_cubes)
