@@ -54,6 +54,7 @@ class _DataCube(object):
 		else:
 			self._filters = filters
 	
+	__hash__ = None
 
 	def __eq__(self, other):
 		"""
@@ -257,15 +258,22 @@ class _DataCube(object):
 
 		return OrderedDict(zip(dims, list(cols)))
 		
-	def groups(self, *as_values):
-		value_ids = [d['id'] for d in self._data['value_dimensions']]
-		as_values = filter(lambda id: id not in value_ids, as_values)
-		value_idx = [self._dim_indices[id] for id in as_values]
+	def group_for(self, *as_values):
+		groups = set(self.dimension_ids()) - set(as_values)
+		return self.group_by(*groups)
+	
+	def group_by(self, *grouping_columns):
+		value_cols = [d['id'] for d in self._data['value_dimensions']]
+
+		value_groups = set(value_cols) & set(grouping_columns)
+		if len(value_groups) > 0:
+			raise NotImplementedError("Grouping by value columns (%s) not implemented"%(value_groups,))
+		group_idx = [self._dim_indices[id] for id in grouping_columns]
 		dim_idx, groupings = zip(*[(i, r) for
 			(i, r) in enumerate(self._enabled_dim_ranges())
-			if i not in value_idx])
-		
+			if i in group_idx])
 		dimension_ids = [dim['id'] for dim in self._data['dimensions']]
+
 		for subset in itertools.product(*groupings):
 			filt = {}
 			for i, cat_i in enumerate(subset):
@@ -274,8 +282,6 @@ class _DataCube(object):
 				cat_id = self._category_id(dim_i, cat_i)
 				filt[dim_id] = cat_id
 			yield self.filter(**filt)
-
-
 
 	
 	def __len__(self):
