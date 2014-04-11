@@ -93,8 +93,8 @@ class Px(object):
         if isinstance(px_doc, basestring):
             px_doc = open(px_doc, 'U')
         meta, data = px_doc.read().split("DATA=")
-        meta = unicode(meta, 'iso-8859-1')
-        data = unicode(data, 'iso-8859-1')
+        meta = unicode(meta, 'windows_1250')
+        data = unicode(data, 'windows_1250')
         nmeta = {}
         for line in _iterate_px_entries(meta.strip()):
             if not line:
