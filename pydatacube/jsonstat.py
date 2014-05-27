@@ -77,8 +77,8 @@ def _copyif(dst, src, key):
 	dst[key] = src[key]
 
 def to_jsonstat_dataset(cube):
-	jsonstat_sanity_check(cube)
 	cube = cube._materialize()
+	jsonstat_sanity_check(cube)
 	js = OrderedDict()
 	ds = js['dataset'] = OrderedDict()
 	_copyif(ds, cube.metadata, 'label')
