@@ -293,7 +293,6 @@ class SqlDataCube(object):
 		query, args = self._get_rows_query(start, end, category_labels)
 		c = self._connection.cursor()
 		c.execute(query, args)
-		print c.mogrify(query, args)
 		return ResultIter(c)
 
 	def __iter__(self):
