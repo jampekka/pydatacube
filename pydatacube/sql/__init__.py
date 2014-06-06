@@ -2,8 +2,8 @@ import itertools
 import copy
 import json
 import re
-import psycopg2
-import psycopg2.extras
+#import psycopg2
+#import psycopg2.extras
 import pydatacube.pydatacube
 
 class AlreadyExists(Exception): pass
@@ -21,6 +21,8 @@ def sql_name_cleanup(name):
 TABLE_ID_MAX_LEN = 255
 TABLE_NAME_MAX_LEN = 50
 COLUMN_NAME_MAX_LEN = 50
+
+
 
 def initialize_schema(connection):
 	c = connection.cursor()
@@ -59,9 +61,10 @@ def initialize_schema(connection):
 class ResultIter(object):
 	def __init__(self, dbresult):
 		self.dbresult = dbresult
+		self.dbresult_iter = iter(dbresult)
 	
 	def next(self):
-		return self.dbresult.next()
+		return self.dbresult_iter.next()
 	
 	def __len__(self):
 		return self.dbresult.rowcount
@@ -128,7 +131,15 @@ class SqlDataCube(object):
 			INSERT INTO _dimension_categories
 			(dataset_id, dimension_id, category_id, category_label)
 			VALUES (%s, %s, %s, %s)""", category_labels)
-
+		
+		# MySQL hacks
+#		dumpfile = open('/tmp/sqlstatcube_dump.csv', 'w')
+#		for row in cube:
+#			dumpfile.write(",".join(row))
+#			dumpfile.write('\n')
+#		dumpfile.close()
+#		c.execute("""LOAD DATA INFILE '/tmp/sqlstatcube_dump.csv' INTO TABLE %s
+#			FIELDS TERMINATED BY ','"""%table_name)
 		c.copy_from(CubeCsv(cube), table_name, columns=column_names)
 
 		return cls(connection, id)
@@ -249,11 +260,16 @@ class SqlDataCube(object):
 		args = label_join_args + args
 		query = "SELECT %s FROM %s WHERE %s ORDER BY _row_number"%(
 			cols, from_query, where)
-		query += " OFFSET %s"
-		args.append(start)
+	
+		# MySQL hack, as it doesn't support OFFSET
+		# without LIMIT
+		#if limit is None:
+		#	limit = 18446744073709551615
 		if limit is not None:
 			query += " LIMIT %s"
 			args.append(limit)
+		query += " OFFSET %s"
+		args.append(start)
 		
 		return query, args
 	
@@ -281,12 +297,17 @@ class SqlDataCube(object):
 
 		query = "SELECT %s FROM %s WHERE %s ORDER BY _row_number"%(
 			dim_ids, table_name, where)
-		query += " OFFSET %s"
-		args.append(start)
+		
+		# MySQL hack, as it doesn't support OFFSET
+		# without LIMIT
+		#if limit is None:
+		#	limit = 18446744073709551615
 		if limit is not None:
 			query += " LIMIT %s"
 			args.append(limit)
-		
+		query += " OFFSET %s"
+		args.append(start)
+
 		return query, args
 
 	def rows(self, start=0, end=None, category_labels=False):
@@ -342,27 +363,48 @@ class SqlDataCube(object):
 				static_dims.append(
 					(d['id'], catval))
 				dim_ids.remove(d['id'])
-
+		# Postgres allows array_agg, but we'll have to use
+		# some hackery with MySQL. Just have to hope there
+		# are no pipes in the labels!
 		col_qs = ['array_agg(%(d)s) as %(d)s'%dict(d=verify_sql_name(d))
 			for d in dim_ids]
+		#col_qs = ["group_concat(%(d)s SEPARATOR '|') as %(d)s"%dict(d=verify_sql_name(d))
+		#	for d in dim_ids]
+		
 		rows_query, rows_args = self._get_rows_query(start, end,
 						category_labels)
 		
-		query = "WITH rows_table AS (%s) SELECT %s FROM rows_table"%(
-			rows_query,
-			','.join(col_qs))
+		# PostgreSQL works with CTE's, but with MySQL we'll
+		# have to use a subselect.
+		#query = "WITH rows_table AS (%s) SELECT %s FROM rows_table"%(
+		#	rows_query,
+		#	','.join(col_qs))
+		query = "SELECT %s FROM (%s) rows_table"%(
+			','.join(col_qs), rows_query)
 		args = rows_args
-
+		
 		c = self._connection.cursor(
-			cursor_factory=psycopg2.extras.RealDictCursor
+			#cursor_factory=psycopg2.extras.RealDictCursor
 			)
+		# More MySQL hacks. Without this the result is just
+		# truncated silently.
+		#c = self._connection.cursor()
+		#c.execute("SET SESSION group_concat_max_len = 18446744073709551615;")
+		#c.close()
+
+		c = self._connection.cursor()
 		c.execute(query, args)
+		names = [d[0] for d in c.description]
 		result = c.fetchone()
+		# We have the delimiter hack on MySQL, so split
+		# to lists
+		#result = (col.split('|') for col in result)
+		result = dict(zip(names, result))
 		result.update(dict(static_dims))
 		if dimension_labels:
 			dim_labels = {d['id']: get_label(d) for d in dims}
 			result = {dim_labels[k]: v for (k,v) in result.iteritems()}
-
+		c.close()
 		return result
 	
 	def group_for(self, *as_values):
@@ -373,12 +415,23 @@ class SqlDataCube(object):
 		dims = self.specification['dimensions']
 		grouping_dims = [d for d in dims if d['id'] in grouping_dim_ids]
 		normal_dims = [d for d in dims if d['id'] not in grouping_dim_ids]
-		
+
 		groupings = []
 		for dim in grouping_dims:
 			groupings.append([c['id'] for c in dim['categories']])
 		
 		grouping_dim_ids = [d['id'] for d in grouping_dims]
+		c = self._connection.cursor()
+		cols = map(verify_sql_name, grouping_dim_ids)
+		where, args = self._get_where_clause()
+		c.execute("SELECT COUNT(DISTINCT %s) FROM %s WHERE %s"%(
+			",".join(cols), self._get_table_name(), where),
+			args)
+		n_groups = c.fetchone()[0]
+		grp_iter = self.__iter_groups(grouping_dim_ids, groupings)
+		return LengthIterator(grp_iter, n_groups)
+
+	def __iter_groups(self, grouping_dim_ids, groupings):
 		for grouping in itertools.product(*groupings):
 			yield self.filter(**dict(zip(grouping_dim_ids, grouping)))
 	
@@ -406,7 +459,17 @@ class SqlDataCube(object):
 		val_dim['values'] = [v[0] for v in c]
 		spec['value_dimensions'] = [val_dim]
 		return pydatacube.pydatacube._DataCube(spec)
-		
+
+class LengthIterator(object):
+	def __init__(self, itr, length):
+		self.itr = itr
+		self.length = length
+	
+	def __iter__(self):
+		return iter(self.itr)
+
+	def __len__(self):
+		return self.length
 
 class CubeCsv(object):
 	def __init__(self, cube):
