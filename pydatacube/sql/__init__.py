@@ -142,6 +142,13 @@ class SqlDataCube(object):
 #			FIELDS TERMINATED BY ','"""%table_name)
 		c.copy_from(CubeCsv(cube), table_name, columns=column_names)
 
+		# Create index on the row number column, which speeds
+		# ORDER BY -operations of large queries a lot by avoiding
+		# disk sorts.
+		c.execute("""
+			CREATE INDEX ON %s (_row_number)
+			"""%(table_name))
+
 		return cls(connection, id)
 
 
@@ -152,6 +159,13 @@ class SqlDataCube(object):
 	
 	@property
 	def specification(self):
+		# TODO: Should be probably cached.
+		spec = self._fast_specification()
+		spec['length'] = len(self)
+
+		return spec
+	
+	def _fast_specification(self):
 		# TODO: Should be probably cached.
 		c = self._connection.cursor()
 		try:
@@ -168,7 +182,6 @@ class SqlDataCube(object):
 			dim = dims[dim_id]
 			dim['categories'] = [cat for cat in dim['categories']
 				if cat['id'] in cat_ids]
-		spec['length'] = len(self)
 		return spec
 	
 	def filter(self, **kwargs):
@@ -214,7 +227,7 @@ class SqlDataCube(object):
 		# This is a bit black magic to get the DB
 		# to do the mapping from ids to labels.
 		dim_ids = [verify_sql_name(dim['id'])
-			for dim in self.specification['dimensions']]
+			for dim in self._fast_specification()['dimensions']]
 		
 		cols = []
 		label_joins = []
@@ -268,12 +281,12 @@ class SqlDataCube(object):
 			limit = end - start 
 		
 		dim_ids = [verify_sql_name(dim['id'])
-			for dim in self.specification['dimensions']]
+			for dim in self._fast_specification()['dimensions']]
 
 		dim_ids = ",".join(dim_ids)
-
-		query = "SELECT %s FROM %s WHERE %s ORDER BY _row_number"%(
-			dim_ids, table_name, where)
+		
+		query = "SELECT %s FROM %s WHERE %s ORDER BY _row_number"
+		query = query%(dim_ids, table_name, where)
 		
 		# MySQL hack, as it doesn't support OFFSET
 		# without LIMIT
@@ -305,7 +318,7 @@ class SqlDataCube(object):
 		return self._get_iter(item.start, item.stop)
 	
 	def dimension_ids(self):
-		return [d['id'] for d in self.specification['dimensions']]
+		return [d['id'] for d in self._fast_specification()['dimensions']]
 	
 	def __len__(self):
 		c = self._connection.cursor()
@@ -321,7 +334,7 @@ class SqlDataCube(object):
 	
 	def toColumns(self, start=0, end=None, collapse_unique=True,
 			category_labels=False, dimension_labels=False):
-		dims = self.specification['dimensions']
+		dims = self._fast_specification()['dimensions']
 		dim_ids = [d['id'] for d in dims]
 		
 		get_label = lambda x: x.get('label', x['id'])
@@ -389,7 +402,7 @@ class SqlDataCube(object):
 		return self.group_by(*groups)
 	
 	def group_by(self, *grouping_dim_ids):
-		dims = self.specification['dimensions']
+		dims = self._fast_specification()['dimensions']
 		grouping_dims = [d for d in dims if d['id'] in grouping_dim_ids]
 		normal_dims = [d for d in dims if d['id'] not in grouping_dim_ids]
 
@@ -436,6 +449,11 @@ class SqlDataCube(object):
 		val_dim['values'] = [v[0] for v in c]
 		spec['value_dimensions'] = [val_dim]
 		return pydatacube.pydatacube._DataCube(spec)
+	
+	def dump_csv(self, output):
+		c = self._connection.cursor()
+		query = "(%s)"%c.mogrify(*self._get_row_labels_query())
+		c.copy_to(output, query, sep=',')
 
 class LengthIterator(object):
 	def __init__(self, itr, length):
