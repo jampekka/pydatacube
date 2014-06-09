@@ -211,22 +211,8 @@ class SqlDataCube(object):
 		return table_name
 
 	def _get_row_labels_query(self, start=0, end=None):
-		# This is rather black magic to get the DB
+		# This is a bit black magic to get the DB
 		# to do the mapping from ids to labels.
-		table_name = self._get_table_name()
-		
-		where, args = self._get_where_clause()
-		if start is None:
-			start = 0
-		if start < 0:
-			raise ValueError('Start must be >= 0')
-		if end is not None and end < start:
-			raise ValueError('End must be >= start')
-		
-		limit = None
-		if end is not None:
-			limit = end - start 
-		
 		dim_ids = [verify_sql_name(dim['id'])
 			for dim in self.specification['dimensions']]
 		
@@ -253,24 +239,15 @@ class SqlDataCube(object):
 					dim_id, dim_id, dim_id)
 				)
 				
-
-		dim_ids = ",".join(dim_ids)
-		from_query = " ".join([table_name] + label_joins)
-		cols = ",".join(cols)
-		args = label_join_args + args
-		query = "SELECT %s FROM %s WHERE %s ORDER BY _row_number"%(
-			cols, from_query, where)
-	
-		# MySQL hack, as it doesn't support OFFSET
-		# without LIMIT
-		#if limit is None:
-		#	limit = 18446744073709551615
-		if limit is not None:
-			query += " LIMIT %s"
-			args.append(limit)
-		query += " OFFSET %s"
-		args.append(start)
 		
+		row_q, args = self._get_rows_query(start, end, category_labels=False)
+		dim_ids = ",".join(dim_ids)
+		from_query = " ".join(['(%s) subset'%row_q] + label_joins)
+		cols = ",".join(cols)
+		args = args + label_join_args
+		query = "SELECT %s FROM %s"%(
+			cols, from_query)
+	
 		return query, args
 	
 	def _get_rows_query(self, start=0, end=None, category_labels=False):
@@ -376,11 +353,11 @@ class SqlDataCube(object):
 		
 		# PostgreSQL works with CTE's, but with MySQL we'll
 		# have to use a subselect.
-		#query = "WITH rows_table AS (%s) SELECT %s FROM rows_table"%(
-		#	rows_query,
-		#	','.join(col_qs))
-		query = "SELECT %s FROM (%s) rows_table"%(
-			','.join(col_qs), rows_query)
+		query = "WITH rows_table AS (%s) SELECT %s FROM rows_table"%(
+			rows_query,
+			','.join(col_qs))
+		#query = "SELECT %s FROM (%s) rows_table"%(
+		#	','.join(col_qs), rows_query)
 		args = rows_args
 		
 		c = self._connection.cursor(
