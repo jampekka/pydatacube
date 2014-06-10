@@ -47,15 +47,21 @@ def initialize_schema(connection):
 		"""%(TABLE_ID_MAX_LEN, COLUMN_NAME_MAX_LEN))
 	
 	c.execute("""
+		CREATE TABLE IF NOT EXISTS _categories (
+			surrogate serial PRIMARY KEY,
+			name TEXT,
+			label TEXT
+		)""")
+	
+
+	c.execute("""
 		CREATE TABLE IF NOT EXISTS _dimension_categories (
 			dataset_id VARCHAR(%i),
 			dimension_id VARCHAR(%i),
-			category_id VARCHAR(%i),
-			category_label TEXT,
-			PRIMARY KEY(dataset_id, dimension_id, category_id)
+			category_surrogate INTEGER REFERENCES _categories(surrogate),
+			PRIMARY KEY(dataset_id, dimension_id, category_surrogate)
 			)
-		"""%(TABLE_ID_MAX_LEN, COLUMN_NAME_MAX_LEN,
-			COLUMN_NAME_MAX_LEN))
+		"""%(TABLE_ID_MAX_LEN, COLUMN_NAME_MAX_LEN))
 
 
 class ResultIter(object):
@@ -84,18 +90,50 @@ class SqlDataCube(object):
 		spec = copy.deepcopy(cube.specification)
 		if 'length' in spec:
 			del spec['length']
+		
+		c = connection.cursor()
+		columns_query = []
+		column_names = []
+		column_mappings = []
+		for dim in spec['dimensions']:
+			name = sql_name_cleanup(dim['id'])
+			column_names.append(name)
+			if 'categories' not in dim:
+				columns_query.append("%s VARCHAR(255)"%name)
+				column_mappings.append({})
+				continue
+			
+			columns_query.append("%s INTEGER"%name)
+			ids = []
+			surrogates = []
+			for cat in dim['categories']:
+				# Executemany's returning is broken :(
+				c.execute("""
+				INSERT INTO _categories
+				(name, label) VALUES (%s, %s)
+				RETURNING surrogate""",
+				[cat['id'], cat.get('label', None)])
+				ids.append(cat['id'])
+				surrogates.append(c.fetchone()[0])
 
-		column_names = (dim['id'] for dim in spec['dimensions'])
-		column_names = map(sql_name_cleanup, column_names)
-		columns_query = ",".join("%s VARCHAR(255)"%s for s in column_names)
+				c.execute("""
+				INSERT INTO _dimension_categories
+				(dataset_id, dimension_id, category_surrogate)
+				VALUES
+				(%s, %s, %s)
+				""", (id, name, surrogates[-1]))
+			mapping = dict(zip(ids, surrogates))
+			column_mappings.append(mapping)
+				
+				
+
+		columns_query = ",".join(columns_query)
 		table_name = sql_name_cleanup(id)[:TABLE_NAME_MAX_LEN]
 		
 		columns_query += ", _row_number serial"
 
-		c = connection.cursor()
 		create_query = "CREATE TABLE %s (%s)"%(table_name, columns_query)
 		c.execute(create_query)
-		
 		dims = cube.specification['dimensions']
 		value_dims = [d['id'] for d in dims if 'categories' not in d]
 		if value_dims == ['value']:
@@ -117,21 +155,6 @@ class SqlDataCube(object):
 			(dataset_id, dimension_id, dimension_label)
 			VALUES (%s, %s, %s)""", dimension_labels)
 
-		category_labels = []
-		for dim in spec['dimensions']:
-			categories = dim.get('categories', [])
-			for category in categories:
-				category_labels.append(
-					[id,
-					dim['id'],
-					category['id'],
-					category.get('label', None)]
-				)
-		c.executemany("""
-			INSERT INTO _dimension_categories
-			(dataset_id, dimension_id, category_id, category_label)
-			VALUES (%s, %s, %s, %s)""", category_labels)
-		
 		# MySQL hacks
 #		dumpfile = open('/tmp/sqlstatcube_dump.csv', 'w')
 #		for row in cube:
@@ -140,7 +163,8 @@ class SqlDataCube(object):
 #		dumpfile.close()
 #		c.execute("""LOAD DATA INFILE '/tmp/sqlstatcube_dump.csv' INTO TABLE %s
 #			FIELDS TERMINATED BY ','"""%table_name)
-		c.copy_from(CubeCsv(cube), table_name, columns=column_names)
+		fake_csv = CubeMappingCsv(cube, column_mappings)
+		c.copy_from(fake_csv, table_name, columns=column_names)
 
 		# Create index on the row number column, which speeds
 		# ORDER BY -operations of large queries a lot by avoiding
@@ -203,7 +227,7 @@ class SqlDataCube(object):
 			values = []
 			dim_id = verify_sql_name(dim_id)
 			ph = ",".join(["%s"]*len(cat_ids))
-			part = "%s IN (%s)"%(verify_sql_name(dim_id), ph)
+			part = "%s IN (SELECT surrogate from _categories WHERE name IN (%s))"%(verify_sql_name(dim_id), ph)
 			parts.append(part)
 			args.extend(cat_ids)
 
@@ -263,9 +287,62 @@ class SqlDataCube(object):
 	
 		return query, args
 	
+	def _get_row_labels_query(self, start=0, end=None, category_labels=False):
+		if category_labels:
+			return self._get_row_labels_query(start, end)
+		id_rows, args = self._get_row_ids_query(start, end)
+		mapping = """(SELECT COALESCE(label, name) FROM _categories
+				WHERE _categories.surrogate=rows.%(dim_id)s)
+				as %(dim_id)s"""
+
+		return self._get_mapping_query((id_rows, args), mapping)
+	
 	def _get_rows_query(self, start=0, end=None, category_labels=False):
 		if category_labels:
 			return self._get_row_labels_query(start, end)
+		id_rows, args = self._get_row_ids_query(start, end)
+		mapping = """(SELECT name FROM _categories
+				WHERE _categories.surrogate=rows.%(dim_id)s)
+				as %(dim_id)s"""
+
+		return self._get_mapping_query((id_rows, args), mapping)
+		
+	def _get_mapping_query(self, (id_rows, args), mapping):
+		table_name = self._get_table_name()
+			
+		mappings = []
+		for dim in self._fast_specification()['dimensions']:
+			dim_id = verify_sql_name(dim['id'])
+			if 'categories' not in dim:
+				mappings.append(dim_id)
+				continue
+
+			mappings.append(mapping%dict(dim_id=dim_id))
+		cols = ",".join(mappings)
+		
+		# The query is marginally (~10%) faster on very large
+		# queries (eg. CSV dumps) if we
+		# preselect the categories like this, but probably
+		# not worth the complexity and inflexibilty.
+		# NOTE: At least with PostgreSQL 9.3, this should
+		#	be in the FROM-clause and the rows in a CTE,
+		#	otherwise the performance is horrible.
+		#cats_q = """SELECT _categories.* FROM _categories
+		#	JOIN _dimension_categories
+		#	ON category_surrogate=surrogate
+		#	WHERE dataset_id=%s"""
+		#args.append(self._id)
+
+
+		query = """
+		SELECT %s FROM (%s) rows
+		"""%(cols, id_rows)
+		return query, args
+
+		
+	
+	def _get_row_ids_query(self, start=0, end=None):
+		
 		table_name = self._get_table_name()
 		
 		where, args = self._get_where_clause()
@@ -452,7 +529,7 @@ class SqlDataCube(object):
 	
 	def dump_csv(self, output):
 		c = self._connection.cursor()
-		query = "(%s)"%c.mogrify(*self._get_row_labels_query())
+		query = "(%s)"%c.mogrify(*self._get_rows_query())
 		c.copy_to(output, query, sep=',')
 
 class LengthIterator(object):
@@ -478,3 +555,20 @@ class CubeCsv(object):
 			return ""
 	
 	read = readline
+
+class CubeMappingCsv(object):
+	def __init__(self, cube, mappings):
+		self.cube_iter = iter(cube)
+		self.mappings = mappings
+	
+	def readline(self, *args):
+		try:
+			row = self.cube_iter.next()
+		except StopIteration:
+			return ""
+
+		row = [m.get(v, v) for m, v in zip(self.mappings, row)]
+		return "\t".join(map(str, row))+"\n"
+		
+	read = readline
+
