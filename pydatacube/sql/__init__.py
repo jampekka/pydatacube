@@ -189,6 +189,10 @@ class SqlDataCube(object):
 
 		return spec
 	
+	@property
+	def metadata(self):
+		return self._fast_specification()['metadata']
+	
 	def _fast_specification(self):
 		# TODO: Should be probably cached.
 		c = self._connection.cursor()
@@ -502,7 +506,7 @@ class SqlDataCube(object):
 		for grouping in itertools.product(*groupings):
 			yield self.filter(**dict(zip(grouping_dim_ids, grouping)))
 	
-	def _materialize(self):
+	def _materialize(self, allow_value_iterator=False):
 		c = self._connection.cursor()
 		c.execute("SELECT cube_value_column FROM _datasets WHERE id=%s",
 			[self._id])
@@ -523,9 +527,32 @@ class SqlDataCube(object):
 			where_clause)
 		c = self._connection.cursor()
 		c.execute(q, args)
+
+		# This way, with a proper encoder, the output can
+		# be streamed instead of read into memory
+		if allow_value_iterator:
+			val_dim['values'] = (v[0] for v in c)
 		val_dim['values'] = [v[0] for v in c]
 		spec['value_dimensions'] = [val_dim]
 		return pydatacube.pydatacube._DataCube(spec)
+	
+	def _value_dimension_values(self):
+		c = self._connection.cursor()
+		c.execute("SELECT cube_value_column FROM _datasets WHERE id=%s",
+			[self._id])
+		value_col = c.fetchone()[0]
+		if value_col is None:
+			raise NotImplementedError("The cube doesn't have an ordered single value column")
+			
+		where_clause, args = self._get_where_clause()
+
+		q = "SELECT %s FROM %s WHERE %s ORDER BY _row_number"%(
+			verify_sql_name(value_col), self._get_table_name(),
+			where_clause)
+		c = self._connection.cursor()
+		c.execute(q, args)
+		return (r[0] for r in c)
+
 	
 	def dump_csv(self, output):
 		c = self._connection.cursor()

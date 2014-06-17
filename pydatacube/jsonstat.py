@@ -3,6 +3,8 @@
 from collections import OrderedDict
 import pydatacube
 
+class JsonstatException(Exception): pass
+
 def _load_dimension(dimensions, dim_i):
 	dimension = OrderedDict()
 	dimension['id'] = dimensions['id'][dim_i]
@@ -62,7 +64,8 @@ def to_cube(js_dataset):
 class ConversionError(Exception): pass
 
 def jsonstat_sanity_check(cube):
-	if len(cube._data['value_dimensions']) != 1:
+	value_dims = [d for d in cube.specification['dimensions'] if 'categories' not in d]
+	if len(value_dims) != 1:
 		raise ConversionError("Can produce jsonstat only from cubes with exactly one value dimension")
 
 def can_convert(cube):
@@ -77,16 +80,25 @@ def _copyif(dst, src, key):
 	dst[key] = src[key]
 
 def to_jsonstat_dataset(cube):
-	cube = cube._materialize()
 	jsonstat_sanity_check(cube)
 	js = OrderedDict()
 	ds = js['dataset'] = OrderedDict()
 	_copyif(ds, cube.metadata, 'label')
 	
 	dims = ds['dimension'] = OrderedDict()
-	cdims = cube._data['dimensions']
+	vdims = []
+	cdims = []
+
+	for dim in cube.specification['dimensions']:
+		if 'categories' in dim:
+			cdims.append(dim)
+		else:
+			vdims.append(dim)
 	dims['id'] = [d['id'] for d in cdims]
 	dims['size'] = [len(d['categories']) for d in cdims]
+	if len(vdims) != 1:
+		raise JsonstatException("Can convert only datasets with exactly one value dimension")
+	vdim = vdims[0]
 
 	for cdim in cdims:
 		dim = dims[cdim['id']] = OrderedDict()
@@ -103,7 +115,7 @@ def to_jsonstat_dataset(cube):
 			cats['label'] = catlabels
 		
 
-	ds['value'] = cube._data['value_dimensions'][0]['values']
+	ds['value'] = cube._value_dimension_values()
 	return ds
 
 def to_jsonstat(cube, dataset_name='dataset'):

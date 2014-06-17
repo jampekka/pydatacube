@@ -35,6 +35,8 @@ class _Row(object):
 	def __iter__(self):
 		return self.ids()
 
+class DataCubeException(Exception): pass
+
 class _DataCube(object):
 	def __init__(self, data, filters=None):
 		self._data = data
@@ -92,6 +94,11 @@ class _DataCube(object):
 				return False
 		return True
 	
+	def _value_dimension_values(self):
+		if len(self._data['value_dimensions']) != 1:
+			raise DataCubeException("No unambiguous value dimension for this cube")
+		return self._data['value_dimensions'][0]['values']
+
 	def _materialize(self):
 		"""
 		Make a "standalone" version of a filtered datacube
