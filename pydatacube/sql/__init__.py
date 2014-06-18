@@ -495,7 +495,7 @@ class SqlDataCube(object):
 		c = self._connection.cursor()
 		cols = map(verify_sql_name, grouping_dim_ids)
 		where, args = self._get_where_clause()
-		c.execute("SELECT COUNT(DISTINCT %s) FROM %s WHERE %s"%(
+		c.execute("SELECT COUNT(DISTINCT(%s)) FROM %s WHERE %s"%(
 			",".join(cols), self._get_table_name(), where),
 			args)
 		n_groups = c.fetchone()[0]
