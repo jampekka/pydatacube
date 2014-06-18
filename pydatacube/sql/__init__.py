@@ -551,7 +551,7 @@ class SqlDataCube(object):
 			where_clause)
 		c = self._connection.cursor()
 		c.execute(q, args)
-		return (r[0] for r in c)
+		return [r[0] for r in c]
 
 	
 	def dump_csv(self, output):
