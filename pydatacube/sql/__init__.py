@@ -84,9 +84,23 @@ class SqlDataCube(object):
 		c = connection.cursor()
 		c.execute("SELECT COUNT(*) from _datasets WHERE id=%s", [id])
 		return bool(c.fetchone()[0])
+	
+	@classmethod
+	def Remove(cls, connection, id):
+		if not cls.Exists(connection, id):
+			return
+		cube = cls(connection, id)
+		c = connection.cursor()
+		c.execute("DROP TABLE %s"%(cube._get_table_name()))
+		c.execute("DELETE from _dataset_dimensions WHERE dataset_id=%s", [id])
+		c.execute("DELETE from _datasets WHERE id=%s", [id])
+		
 
 	@classmethod
-	def FromCube(cls, connection, id, cube):
+	def FromCube(cls, connection, id, cube, replace=False):
+		if replace:
+			cls.Remove(connection, id)
+
 		spec = copy.deepcopy(cube.specification)
 		if 'length' in spec:
 			del spec['length']
