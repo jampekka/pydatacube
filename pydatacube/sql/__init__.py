@@ -95,6 +95,7 @@ class SqlDataCube(object):
 		columns_query = []
 		column_names = []
 		column_mappings = []
+		category_columns = []
 		for dim in spec['dimensions']:
 			name = sql_name_cleanup(dim['id'])
 			column_names.append(name)
@@ -103,6 +104,7 @@ class SqlDataCube(object):
 				column_mappings.append({})
 				continue
 			
+			category_columns.append(name)
 			columns_query.append("%s INTEGER"%name)
 			ids = []
 			surrogates = []
@@ -173,6 +175,11 @@ class SqlDataCube(object):
 			CREATE INDEX ON %s (_row_number)
 			"""%(table_name))
 
+		for col in category_columns:
+			c.execute("""
+			CREATE INDEX ON %s (%s)
+			"""%(table_name, col))
+
 		return cls(connection, id)
 
 
@@ -194,7 +201,9 @@ class SqlDataCube(object):
 		return self._fast_specification()['metadata']
 	
 	def _fast_specification(self):
-		# TODO: Should be probably cached.
+		if hasattr(self, '_fast_specification_cache'):
+			return self._fast_specification_cache
+		
 		c = self._connection.cursor()
 		try:
 			c.execute("""
@@ -210,6 +219,8 @@ class SqlDataCube(object):
 			dim = dims[dim_id]
 			dim['categories'] = [cat for cat in dim['categories']
 				if cat['id'] in cat_ids]
+		
+		self._fast_specification_cache = spec
 		return spec
 	
 	def filter(self, **kwargs):
@@ -222,8 +233,12 @@ class SqlDataCube(object):
 				categories = [categories]
 			filters[dim_id] = set(categories)
 		
-		return SqlDataCube(self._connection, self._id, filters)
-	
+		new = SqlDataCube(self._connection, self._id, filters)
+		if hasattr(self, '_table_name_cache'):
+			new._table_name_cache = self._table_name_cache
+		
+		return new
+
 	def _get_where_clause(self):
 		parts = []
 		args = []
@@ -241,6 +256,9 @@ class SqlDataCube(object):
 		return " AND ".join(parts), args
 	
 	def _get_table_name(self):
+		if hasattr(self, '_table_name_cache'):
+			return self._table_name_cache
+
 		c = self._connection.cursor()
 		try:
 			c.execute("""
@@ -249,6 +267,7 @@ class SqlDataCube(object):
 			table_name = verify_sql_name(c.fetchone()[0])
 		finally:
 			c.close()
+		self._table_name_cache = table_name
 		return table_name
 
 	def _get_row_labels_query(self, start=0, end=None):
@@ -346,9 +365,7 @@ class SqlDataCube(object):
 		
 	
 	def _get_row_ids_query(self, start=0, end=None):
-		
 		table_name = self._get_table_name()
-		
 		where, args = self._get_where_clause()
 		if start is None:
 			start = 0
