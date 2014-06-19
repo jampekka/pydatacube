@@ -34,11 +34,24 @@ class Sluger(object):
 
 PxSyntaxError = px_reader.PxSyntaxError
 
-def to_cube(pcaxis_data, Sluger=Sluger):
+def to_cube(pcaxis_data, origin_url=None, Sluger=Sluger):
 	px = px_reader.Px(pcaxis_data)
 	cube = OrderedDict()
 	metadata = OrderedDict()
-	metadata['label'] = px.title
+	
+	def setmeta(target, src):
+		if not hasattr(px, src):
+			return
+		metadata[target] = getattr(px, src)
+
+	setmeta('title', 'title')
+	setmeta('source', 'source')
+	if origin_url:
+		metadata['origin_url'] = origin_url
+	if hasattr(px, 'last-updated'):
+		metadata['updated'] = getattr(px, 'updated_dt').isoformat()
+	setmeta('note', 'note')
+
 	cube['metadata'] = metadata
 	
 	if hasattr(px, 'codes'):

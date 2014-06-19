@@ -19,6 +19,7 @@ from collections import OrderedDict as OD
 from collections import defaultdict
 from itertools import izip_longest, cycle, repeat
 from operator import mul
+import datetime
 
 def get_logger(level=logging.DEBUG, handler=logging.StreamHandler):
     """
@@ -62,7 +63,7 @@ class Px(object):
     (excluding multilingual fields for the moment #FIXME multilingual fields)
     """
     
-    _timeformat = '%Y-%m-%d %H:%M'
+    _timeformat = '%Y%m%d %H:%M'
     _subfield_re = re.compile(r'^(.*?)\("(.*?)"\)=')
     _items_re = re.compile(r'"(.*?)"')
 
@@ -156,7 +157,7 @@ class Px(object):
    
     @property
     def updated_dt(self):
-        return datetime.datetime.strptime(self.updated, self._timeformat)
+        return datetime.datetime.strptime(getattr(self, 'last-updated'), self._timeformat)
 
     @property
     def data(self):
