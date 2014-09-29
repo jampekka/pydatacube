@@ -5,10 +5,16 @@ import re
 #import psycopg2
 #import psycopg2.extras
 import pydatacube.pydatacube
+from pydatacube import method_memoize, lazy_dict, DataCubeBase
+
+class NotFound(Exception): pass
 
 class AlreadyExists(Exception): pass
 
 class InvalidIdentifier(Exception): pass
+
+class IncompatibleCubes(Exception): pass
+
 
 def verify_sql_name(name):
 	if re.match('[^0-9a-zA-Z]', name):
@@ -21,8 +27,6 @@ def sql_name_cleanup(name):
 TABLE_ID_MAX_LEN = 255
 TABLE_NAME_MAX_LEN = 50
 COLUMN_NAME_MAX_LEN = 50
-
-
 
 def initialize_schema(connection):
 	c = connection.cursor()
@@ -78,7 +82,7 @@ class ResultIter(object):
 	def __iter__(self):
 		return self
 
-class SqlDataCube(object):
+class SqlDataCube(DataCubeBase):
 	@classmethod
 	def Exists(cls, connection, id):
 		c = connection.cursor()
@@ -203,28 +207,20 @@ class SqlDataCube(object):
 		self._filters = filters
 	
 	@property
+	@method_memoize
 	def specification(self):
-		# TODO: Should be probably cached.
-		spec = self._fast_specification()
-		spec['length'] = len(self)
-
-		return spec
-	
-	@property
-	def metadata(self):
-		return self._fast_specification()['metadata']
-	
-	def _fast_specification(self):
-		if hasattr(self, '_fast_specification_cache'):
-			return self._fast_specification_cache
-		
 		c = self._connection.cursor()
 		try:
 			c.execute("""
 				SELECT specification FROM _datasets
 				WHERE id=%s
 				""", [self._id])
-			spec = json.loads(c.fetchone()[0])
+			
+			result = c.fetchone()
+			if not result:
+				raise NotFound("No cube with id %s"%self._id)
+			
+			spec = json.loads(result[0])
 		finally:
 			c.close()
 
@@ -234,14 +230,24 @@ class SqlDataCube(object):
 			dim['categories'] = [cat for cat in dim['categories']
 				if cat['id'] in cat_ids]
 		
-		self._fast_specification_cache = spec
+		spec = lazy_dict(spec)
+		spec.lazy['length'] = lambda x: len(self)
+
 		return spec
+	
+	@property
+	def metadata(self):
+		return self.specification['metadata']
 	
 	def filter(self, **kwargs):
 		filters = copy.deepcopy(self._filters)
 		# TODO: This allows filtering by categories, that may
 		#	not actually be in a filtered object anymore,
 		#	and thus breaks "materialized/filtered" equivalency.
+		# TODO: We could calculate the new categories and dimensions
+		#	here (even lazily) and pass them to the filtered
+		#	cube, saving a query. This gets expensive especially
+		#	in group_by.
 		for dim_id, categories in kwargs.items():
 			if isinstance(categories, basestring):
 				categories = [categories]
@@ -284,46 +290,6 @@ class SqlDataCube(object):
 		self._table_name_cache = table_name
 		return table_name
 
-	def _get_row_labels_query(self, start=0, end=None):
-		# This is a bit black magic to get the DB
-		# to do the mapping from ids to labels.
-		dim_ids = [verify_sql_name(dim['id'])
-			for dim in self._fast_specification()['dimensions']]
-		
-		cols = []
-		label_joins = []
-		label_join_args = []
-		for dim_id in dim_ids:
-			label_join = """LEFT JOIN (
-				SELECT
-					category_label AS label,
-					category_id AS id
-				FROM _dimension_categories
-				WHERE
-					dataset_id=%%s AND
-					dimension_id=%%s
-				) _label_%(dim)s ON %(dim)s=_label_%(dim)s.id
-				
-				"""%dict(dim=dim_id)
-			label_joins.append(label_join)
-			label_join_args.append(self._id)
-			label_join_args.append(dim_id)
-			cols.append(
-				"COALESCE(_label_%s.label, %s) AS %s"%(
-					dim_id, dim_id, dim_id)
-				)
-				
-		
-		row_q, args = self._get_rows_query(start, end, category_labels=False)
-		dim_ids = ",".join(dim_ids)
-		from_query = " ".join(['(%s) subset'%row_q] + label_joins)
-		cols = ",".join(cols)
-		args = args + label_join_args
-		query = "SELECT %s FROM %s"%(
-			cols, from_query)
-	
-		return query, args
-	
 	def _get_row_labels_query(self, start=0, end=None, category_labels=False):
 		if category_labels:
 			return self._get_row_labels_query(start, end)
@@ -348,7 +314,7 @@ class SqlDataCube(object):
 		table_name = self._get_table_name()
 			
 		mappings = []
-		for dim in self._fast_specification()['dimensions']:
+		for dim in self.specification['dimensions']:
 			dim_id = verify_sql_name(dim['id'])
 			if 'categories' not in dim:
 				mappings.append(dim_id)
@@ -393,7 +359,7 @@ class SqlDataCube(object):
 			limit = end - start 
 		
 		dim_ids = [verify_sql_name(dim['id'])
-			for dim in self._fast_specification()['dimensions']]
+			for dim in self.specification['dimensions']]
 
 		dim_ids = ",".join(dim_ids)
 		
@@ -418,9 +384,6 @@ class SqlDataCube(object):
 		c.execute(query, args)
 		return ResultIter(c)
 
-	def __iter__(self):
-		return self.rows()
-	
 	def __getitem__(self, item):
 		if not (hasattr(item, 'start') and
 			hasattr(item, 'stop')):
@@ -429,9 +392,7 @@ class SqlDataCube(object):
 			raise NotImplemented('Slice step not implemented')
 		return self._get_iter(item.start, item.stop)
 	
-	def dimension_ids(self):
-		return [d['id'] for d in self._fast_specification()['dimensions']]
-	
+	@method_memoize
 	def __len__(self):
 		c = self._connection.cursor()
 		try:
@@ -444,9 +405,13 @@ class SqlDataCube(object):
 		finally:
 			c.close()
 	
-	def toColumns(self, start=0, end=None, collapse_unique=True,
+	# This is only very marginally faster than "transposing"
+	# the rows, so no need for more complexity. And using the
+	# rows allows for streaming and a lot simpler "prefetching".
+	def _toColumns_deprecated(self, start=0, end=None,
+			collapse_unique=True,
 			category_labels=False, dimension_labels=False):
-		dims = self._fast_specification()['dimensions']
+		dims = self.specification['dimensions']
 		dim_ids = [d['id'] for d in dims]
 		
 		get_label = lambda x: x.get('label', x['id'])
@@ -468,7 +433,7 @@ class SqlDataCube(object):
 		# Postgres allows array_agg, but we'll have to use
 		# some hackery with MySQL. Just have to hope there
 		# are no pipes in the labels!
-		col_qs = ['array_agg(%(d)s) as %(d)s'%dict(d=verify_sql_name(d))
+		col_qs = ["COALESCE(array_agg(%(d)s), '{}') as %(d)s"%dict(d=verify_sql_name(d))
 			for d in dim_ids]
 		#col_qs = ["group_concat(%(d)s SEPARATOR '|') as %(d)s"%dict(d=verify_sql_name(d))
 		#	for d in dim_ids]
@@ -509,12 +474,8 @@ class SqlDataCube(object):
 		c.close()
 		return result
 	
-	def group_for(self, *as_values):
-		groups = set(self.dimension_ids()) - set(as_values)
-		return self.group_by(*groups)
-	
 	def group_by(self, *grouping_dim_ids):
-		dims = self._fast_specification()['dimensions']
+		dims = self.specification['dimensions']
 		grouping_dims = [d for d in dims if d['id'] in grouping_dim_ids]
 		normal_dims = [d for d in dims if d['id'] not in grouping_dim_ids]
 
@@ -589,6 +550,8 @@ class SqlDataCube(object):
 		c = self._connection.cursor()
 		query = "(%s)"%c.mogrify(*self._get_rows_query())
 		c.copy_to(output, query, sep=',')
+
+
 
 class LengthIterator(object):
 	def __init__(self, itr, length):

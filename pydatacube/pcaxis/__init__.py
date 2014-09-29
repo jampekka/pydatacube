@@ -44,7 +44,7 @@ def to_cube(pcaxis_data, origin_url=None, Sluger=Sluger):
 			return
 		metadata[target] = getattr(px, src)
 
-	setmeta('title', 'title')
+	setmeta('label', 'title')
 	setmeta('source', 'source')
 	if origin_url:
 		metadata['origin_url'] = origin_url
