@@ -290,20 +290,18 @@ class SqlDataCube(DataCubeBase):
 		self._table_name_cache = table_name
 		return table_name
 
-	def _get_row_labels_query(self, start=0, end=None, category_labels=False):
-		if category_labels:
-			return self._get_row_labels_query(start, end)
-		id_rows, args = self._get_row_ids_query(start, end)
+	def _get_row_labels_query(self, start=0, end=None, order=[]):
+		id_rows, args = self._get_row_ids_query(start, end, order=order)
 		mapping = """(SELECT COALESCE(label, name) FROM _categories
 				WHERE _categories.surrogate=rows.%(dim_id)s)
 				as %(dim_id)s"""
 
 		return self._get_mapping_query((id_rows, args), mapping)
 	
-	def _get_rows_query(self, start=0, end=None, category_labels=False):
+	def _get_rows_query(self, start=0, end=None, category_labels=False, order=[]):
 		if category_labels:
-			return self._get_row_labels_query(start, end)
-		id_rows, args = self._get_row_ids_query(start, end)
+			return self._get_row_labels_query(start, end, order=order)
+		id_rows, args = self._get_row_ids_query(start, end, order=order)
 		mapping = """(SELECT name FROM _categories
 				WHERE _categories.surrogate=rows.%(dim_id)s)
 				as %(dim_id)s"""
@@ -344,7 +342,7 @@ class SqlDataCube(DataCubeBase):
 
 		
 	
-	def _get_row_ids_query(self, start=0, end=None):
+	def _get_row_ids_query(self, start=0, end=None, order=[]):
 		table_name = self._get_table_name()
 		where, args = self._get_where_clause()
 		if start is None:
@@ -363,8 +361,12 @@ class SqlDataCube(DataCubeBase):
 
 		dim_ids = ",".join(dim_ids)
 		
-		query = "SELECT %s FROM %s WHERE %s ORDER BY _row_number"
-		query = query%(dim_ids, table_name, where)
+		order = map(verify_sql_name, order)
+		order = ', '.join(order)
+		if len(order) > 0:
+			order += ","
+		query = "SELECT %s FROM %s WHERE %s ORDER BY %s _row_number"
+		query = query%(dim_ids, table_name, where, order)
 		
 		# MySQL hack, as it doesn't support OFFSET
 		# without LIMIT
@@ -378,8 +380,8 @@ class SqlDataCube(DataCubeBase):
 
 		return query, args
 
-	def rows(self, start=0, end=None, category_labels=False):
-		query, args = self._get_rows_query(start, end, category_labels)
+	def rows(self, start=0, end=None, category_labels=False, order=[]):
+		query, args = self._get_rows_query(start, end, category_labels, order=order)
 		c = self._connection.cursor()
 		c.execute(query, args)
 		return ResultIter(c)
@@ -405,78 +407,10 @@ class SqlDataCube(DataCubeBase):
 		finally:
 			c.close()
 	
-	# This is only very marginally faster than "transposing"
-	# the rows, so no need for more complexity. And using the
-	# rows allows for streaming and a lot simpler "prefetching".
-	def _toColumns_deprecated(self, start=0, end=None,
-			collapse_unique=True,
-			category_labels=False, dimension_labels=False):
-		dims = self.specification['dimensions']
-		dim_ids = [d['id'] for d in dims]
-		
-		get_label = lambda x: x.get('label', x['id'])
-
-		static_dims = []
-		if collapse_unique:
-			for d in dims:
-				cats = d.get('categories', [])
-				if len(cats) != 1:
-					continue
-				if category_labels:
-					catval = get_label(cats[0])
-				else:
-					catval = cats[0]['id']
-
-				static_dims.append(
-					(d['id'], catval))
-				dim_ids.remove(d['id'])
-		# Postgres allows array_agg, but we'll have to use
-		# some hackery with MySQL. Just have to hope there
-		# are no pipes in the labels!
-		col_qs = ["COALESCE(array_agg(%(d)s), '{}') as %(d)s"%dict(d=verify_sql_name(d))
-			for d in dim_ids]
-		#col_qs = ["group_concat(%(d)s SEPARATOR '|') as %(d)s"%dict(d=verify_sql_name(d))
-		#	for d in dim_ids]
-		
-		rows_query, rows_args = self._get_rows_query(start, end,
-						category_labels)
-		
-		# PostgreSQL works with CTE's, but with MySQL we'll
-		# have to use a subselect.
-		query = "WITH rows_table AS (%s) SELECT %s FROM rows_table"%(
-			rows_query,
-			','.join(col_qs))
-		#query = "SELECT %s FROM (%s) rows_table"%(
-		#	','.join(col_qs), rows_query)
-		args = rows_args
-		
-		c = self._connection.cursor(
-			#cursor_factory=psycopg2.extras.RealDictCursor
-			)
-		# More MySQL hacks. Without this the result is just
-		# truncated silently.
-		#c = self._connection.cursor()
-		#c.execute("SET SESSION group_concat_max_len = 18446744073709551615;")
-		#c.close()
-
-		c = self._connection.cursor()
-		c.execute(query, args)
-		names = [d[0] for d in c.description]
-		result = c.fetchone()
-		# We have the delimiter hack on MySQL, so split
-		# to lists
-		#result = (col.split('|') for col in result)
-		result = dict(zip(names, result))
-		result.update(dict(static_dims))
-		if dimension_labels:
-			dim_labels = {d['id']: get_label(d) for d in dims}
-			result = {dim_labels[k]: v for (k,v) in result.iteritems()}
-		c.close()
-		return result
-	
 	def group_by(self, *grouping_dim_ids):
 		dims = self.specification['dimensions']
-		grouping_dims = [d for d in dims if d['id'] in grouping_dim_ids]
+		grouping_dims = [(i, d) for i, d in enumerate(dims) if d['id'] in grouping_dim_ids]
+		grouping_dim_idx, grouping_dims = zip(*grouping_dims)
 		normal_dims = [d for d in dims if d['id'] not in grouping_dim_ids]
 
 		groupings = []
@@ -491,12 +425,18 @@ class SqlDataCube(DataCubeBase):
 			",".join(cols), self._get_table_name(), where),
 			args)
 		n_groups = c.fetchone()[0]
-		grp_iter = self.__iter_groups(grouping_dim_ids, groupings)
+		grp_iter = self.__iter_groups(grouping_dim_ids, grouping_dim_idx, groupings)
 		return LengthIterator(grp_iter, n_groups)
 
-	def __iter_groups(self, grouping_dim_ids, groupings):
-		for grouping in itertools.product(*groupings):
-			yield self.filter(**dict(zip(grouping_dim_ids, grouping)))
+	def __iter_groups(self, grouping_dim_ids, grouping_dim_idx, groupings):
+		# TODO: Any chance (or reason) for doing this in SQL?
+		rows = self.rows(order=grouping_dim_ids)
+		getkey = lambda row: tuple(row[i] for i in grouping_dim_idx)
+		groups = itertools.groupby(rows, getkey)
+		for grouping, data in groups:
+			filter = dict(zip(grouping_dim_ids, grouping))
+			subcube = self.filter(**filter)
+			yield _populate_cube(subcube, data)
 	
 	def _materialize(self, allow_value_iterator=False):
 		c = self._connection.cursor()
@@ -550,6 +490,21 @@ class SqlDataCube(DataCubeBase):
 		c = self._connection.cursor()
 		query = "(%s)"%c.mogrify(*self._get_rows_query())
 		c.copy_to(output, query, sep=',')
+
+def _populate_cube(self, data):
+	# How I love Python! Try to do this with your nazi static typing
+	# without changing the original class etc ugliness!
+	orig_rows = self.rows
+	def rows(start=0, end=None, category_labels=False):
+		if category_labels:
+			raise NotImplemented("Category labels queries not implemented (it was a stupid idea anyway)")
+		for row in itertools.islice(data, start, end):
+			yield row
+		self.rows = orig_rows
+
+	self.rows = rows
+
+	return self
 
 
 

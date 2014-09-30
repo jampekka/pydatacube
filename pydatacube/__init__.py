@@ -178,13 +178,11 @@ class UnionDataCube(DataCubeBase):
 	def filter(self, **kwargs):
 		return self.__class__(*(c.filter(**kwargs) for c in self._all))
 	
-	def rows(self, *args, **kwargs):
-		for cube in self._all:
-			# No yield from :(
-			for row in cube.rows(*args, **kwargs):
-				yield row
-	
-
+	def rows(self, start=0, end=None, **kwargs):
+		# TODO: The limit could be a lot nicer
+		rows = (c.rows(**kwargs) for c in self._all)
+		rows = itertools.chain(*rows)
+		return itertools.islice(rows, start, end)
 	
 	@method_memoize
 	def __len__(self):
